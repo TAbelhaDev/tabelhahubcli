@@ -19,10 +19,13 @@
 Uma CLI Go pequena (`tahubcli`) com um único trabalho: transformar dados
 estruturados de projetos/mercado em sugestões de post pro
 [tabelhahub](https://github.com/TAbelhaDev/tabelhahub), o site em SvelteKit.
-Não tem estado nem TUI — lê JSON do stdin e escreve JSON no stdout, pensado
-pra ficar no meio de um step de workflow do `tabelhaglue` (`taradar ipc
-projects.list --json | tahubcli ipc suggest --json | node
-scripts/new-post.mjs`) ou rodar sozinha pra testar.
+Não tem estado nem TUI. O engine do
+[`tabelhaglue`](https://github.com/TAbelhaDev/tabelhaglue) nunca encadeia
+stdin entre steps, então o `tahubcli` recebe a entrada como filtros IPC
+(`key=value`), cada um carregando o output JSON de um step anterior
+interpolado como string — a cadeia real
+(`~/.config/taglue/workflows/post-suggestions.toml`) é `taradar` →
+`taselfdoc` → `tavagas` → `tahubcli` → `node scripts/new-post.mjs`.
 
 ## Instalação
 
@@ -44,28 +47,21 @@ go build -o tahubcli .
 ## Uso
 
 ```bash
-tahubcli ipc suggest --json < payload.json
+tahubcli ipc suggest --json \
+  projects='[{"name":"tabelharadar","dirty_count":3,"last_commit_msg":"feat: suporte a grupos de projeto","memory_notes":["falta cobrir o caso de grupo vazio"]}]' \
+  vagas='[{"title":"Backend Go Pleno","company":"Acme","location":"Remoto","score":82,"url":"https://..."}]' \
+  docs='[]'
 ```
 
-`payload.json` é ou uma lista simples de projetos, ou um objeto com `projects`
-e (opcionalmente) `postings`:
-
-```json
-{
-  "projects": [
-    { "name": "tabelharadar", "dirty_count": 3,
-      "last_commit_msg": "feat: suporte a grupos de projeto",
-      "memory_notes": ["falta cobrir o caso de grupo vazio"] }
-  ],
-  "postings": [
-    { "title": "Backend Go Pleno", "company": "Acme", "location": "Remoto",
-      "score": 82, "url": "https://..." }
-  ]
-}
-```
+`projects=` e `vagas=` são cada um um array JSON como string — normalmente o
+output bruto de um step anterior do `taglue` (`taradar ipc projects.list
+--json`, `tavagas ipc postings.top --json`), interpolado via
+`${steps.N.output.raw}`. Os dois são opcionais; um filtro ausente ou vazio
+vira array vazio, nunca erro. `docs=` (o array do `taselfdoc report`) é
+aceito por compatibilidade futura, mas ainda não é usado.
 
 Cada projeto ativo (com `last_commit_msg`, `dirty_count > 0` ou
-`memory_notes`) vira uma sugestão de post. Quando `postings` está presente,
+`memory_notes`) vira uma sugestão de post. Quando `vagas` não está vazio,
 uma sugestão extra de "resumo do mercado" é acrescentada, montada com as
 top-N vagas por score (`n=5` por padrão, sobrescrevível via filtro IPC `n=`).
 A saída é sempre um array de:

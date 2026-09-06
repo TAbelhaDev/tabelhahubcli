@@ -5,36 +5,6 @@ import (
 	"testing"
 )
 
-func TestParseSuggestInputArray(t *testing.T) {
-	in, err := parseSuggestInput([]byte(`[{"name":"taradar","dirty_count":1,"last_commit_msg":"feat: x"}]`))
-	if err != nil {
-		t.Fatalf("parseSuggestInput: %v", err)
-	}
-	if len(in.Projects) != 1 || len(in.Postings) != 0 {
-		t.Fatalf("got %+v", in)
-	}
-}
-
-func TestParseSuggestInputObjectWithPostings(t *testing.T) {
-	in, err := parseSuggestInput([]byte(`{"projects":[{"name":"taradar"}],"postings":[{"title":"Go Dev","company":"Acme","score":10}]}`))
-	if err != nil {
-		t.Fatalf("parseSuggestInput: %v", err)
-	}
-	if len(in.Projects) != 1 || len(in.Postings) != 1 {
-		t.Fatalf("got %+v", in)
-	}
-}
-
-func TestParseSuggestInputObjectWithoutPostings(t *testing.T) {
-	in, err := parseSuggestInput([]byte(`{"projects":[{"name":"taradar"}]}`))
-	if err != nil {
-		t.Fatalf("parseSuggestInput: %v", err)
-	}
-	if len(in.Postings) != 0 {
-		t.Fatalf("expected no postings, got %+v", in.Postings)
-	}
-}
-
 func TestBuildSuggestionsSkipsInactiveProjects(t *testing.T) {
 	in := suggestInput{Projects: []project{
 		{Name: "quiet"},

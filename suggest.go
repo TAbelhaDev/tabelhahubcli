@@ -1,8 +1,6 @@
 package main
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
 	"regexp"
 	"sort"
@@ -13,11 +11,12 @@ import (
 // suggestion, overridable via the `n=` IPC filter.
 const topNPostings = 5
 
-// suggestInput is the tolerant wire format for `tahubcli ipc suggest
-// --json`: either a bare array of projects, or an object carrying
-// `projects` and (optionally) `postings`. Field sets on both sides are
-// still moving in tabelhaglue/tabelhavagas, so unknown fields are ignored
-// rather than rejected.
+// suggestInput is assembled by ipcSuggest from the `projects=` and `vagas=`
+// IPC filters (each a JSON array, see unmarshalFilterArray in ipc.go) — the
+// taglue engine interpolates a prior step's raw output into these as plain
+// strings rather than piping stdin between steps. Field sets on both sides
+// are still moving in tabelhaglue/tabelhavagas, so unknown fields are
+// ignored rather than rejected.
 type suggestInput struct {
 	Projects []project `json:"projects"`
 	Postings []posting `json:"postings"`
@@ -54,31 +53,6 @@ type suggestion struct {
 	Summary     string   `json:"summary"`
 	Tags        []string `json:"tags"`
 	Placeholder string   `json:"placeholder"`
-}
-
-// parseSuggestInput accepts either a bare `[...]` project array or a
-// `{"projects": [...], "postings": [...]}` object.
-func parseSuggestInput(data []byte) (suggestInput, error) {
-	data = bytes.TrimSpace(data)
-	if len(data) == 0 {
-		return suggestInput{}, fmt.Errorf("nenhum JSON recebido no stdin")
-	}
-	switch data[0] {
-	case '[':
-		var projects []project
-		if err := json.Unmarshal(data, &projects); err != nil {
-			return suggestInput{}, err
-		}
-		return suggestInput{Projects: projects}, nil
-	case '{':
-		var in suggestInput
-		if err := json.Unmarshal(data, &in); err != nil {
-			return suggestInput{}, err
-		}
-		return in, nil
-	default:
-		return suggestInput{}, fmt.Errorf("esperado array de projetos ou objeto {projects, postings}")
-	}
 }
 
 func buildSuggestions(input suggestInput, topN int) []suggestion {

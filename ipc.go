@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -71,21 +70,24 @@ func runIPC(args []string) int {
 	}
 }
 
-// ipcSuggest reads the projects/postings payload from stdin and prints the
-// generated post suggestions. Filters: n= overrides the market-summary top-N
-// (default topNPostings).
+// ipcSuggest builds suggestions from the `projects=` and `vagas=` IPC
+// filters — each holds the raw JSON array a prior taglue workflow step
+// produced, interpolated in as a string (see engine.go: the engine never
+// pipes stdin between steps). `docs=` (tabelhaselfdoc's report array) is
+// accepted but not parsed yet — buildSuggestions doesn't use it. `n=`
+// overrides the market-summary top-N (default topNPostings).
 func ipcSuggest(filters map[string]string) int {
-	data, err := io.ReadAll(os.Stdin)
+	projects, err := unmarshalFilterArray[project](filters["projects"])
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "erro ao ler stdin:", err)
+		fmt.Fprintln(os.Stderr, "erro ao interpretar filtro projects=:", err)
 		return 1
 	}
-
-	input, err := parseSuggestInput(data)
+	postings, err := unmarshalFilterArray[posting](filters["vagas"])
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "erro ao interpretar JSON de entrada:", err)
+		fmt.Fprintln(os.Stderr, "erro ao interpretar filtro vagas=:", err)
 		return 1
 	}
+	input := suggestInput{Projects: projects, Postings: postings}
 
 	topN := topNPostings
 	if raw, ok := filters["n"]; ok {
@@ -98,4 +100,20 @@ func ipcSuggest(filters map[string]string) int {
 	}
 
 	return writeJSON(buildSuggestions(input, topN))
+}
+
+// unmarshalFilterArray parses raw (an IPC filter value carrying a JSON
+// array as a string) into a slice of T. An empty/absent filter yields a
+// nil slice, not an error — projects=, vagas= and docs= are each optional
+// on their own.
+func unmarshalFilterArray[T any](raw string) ([]T, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+	var out []T
+	if err := json.Unmarshal([]byte(raw), &out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }

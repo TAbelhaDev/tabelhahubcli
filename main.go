@@ -18,5 +18,5 @@ func main() {
 
 func printUsage() {
 	fmt.Fprintln(os.Stderr, "uso: tahubcli ipc <método> [key=value...] --json")
-	fmt.Fprintln(os.Stderr, "métodos: suggest (lê JSON do stdin)")
+	fmt.Fprintln(os.Stderr, "métodos: suggest projects=<json> vagas=<json> [docs=<json>] [n=<int>]")
 }
