@@ -64,6 +64,8 @@ func runIPC(args []string) int {
 	switch parsed.Method {
 	case "suggest":
 		return ipcSuggest(parsed.Filters)
+	case "suggest.retro":
+		return ipcSuggestRetro(parsed.Filters)
 	default:
 		fmt.Fprintf(os.Stderr, "método desconhecido: %q\n", parsed.Method)
 		return 1
@@ -116,4 +118,22 @@ func unmarshalFilterArray[T any](raw string) ([]T, error) {
 		return nil, err
 	}
 	return out, nil
+}
+
+// ipcSuggestRetro builds period-based retrospective post cards from
+// taradar's projects.commits output. Filters: commits= (JSON array from
+// projects.commits), period= (days per window, default 7).
+func ipcSuggestRetro(filters map[string]string) int {
+	commits, err := unmarshalFilterArray[projectCommits](filters["commits"])
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "erro ao interpretar filtro commits=:", err)
+		return 1
+	}
+	period := 7
+	if raw, ok := filters["period"]; ok {
+		if n, err := strconv.Atoi(raw); err == nil && n > 0 {
+			period = n
+		}
+	}
+	return writeJSON(buildRetroSuggestions(commits, period))
 }

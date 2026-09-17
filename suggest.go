@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 )
 
 // topNPostings is the default number of postings summarized by the market
@@ -297,4 +298,124 @@ func slugify(s string) string {
 		}
 	}
 	return s
+}
+
+// --- Retro suggest (period-based retrospective) ---
+
+// commitEntry mirrors taradar's projects.commits output per commit.
+type commitEntry struct {
+	Time    string `json:"time"`
+	Message string `json:"message"`
+}
+
+// projectCommits mirrors taradar's projects.commits output per project.
+type projectCommits struct {
+	Name    string        `json:"name"`
+	Commits []commitEntry `json:"commits"`
+}
+
+// flatCommit is a commit with its project name and parsed time, used
+// internally by buildRetroSuggestions for sorting and grouping.
+type flatCommit struct {
+	project string
+	time    time.Time
+	message string
+}
+
+// buildRetroSuggestions groups commits into time-period windows and generates
+// one suggestion (post card) per window. periodDays controls window width
+// (default 7 = weekly). The output is []suggestion so cards.batch can consume
+// it directly.
+func buildRetroSuggestions(commits []projectCommits, periodDays int) []suggestion {
+	if periodDays <= 0 {
+		periodDays = 7
+	}
+	if len(commits) == 0 {
+		return nil
+	}
+
+	// Flatten all commits with project name for sorting.
+	var all []flatCommit
+	for _, pc := range commits {
+		for _, c := range pc.Commits {
+			t, err := time.Parse(time.RFC3339, c.Time)
+			if err != nil {
+				continue
+			}
+			all = append(all, flatCommit{project: pc.Name, time: t, message: c.Message})
+		}
+	}
+	if len(all) == 0 {
+		return nil
+	}
+	sort.Slice(all, func(i, j int) bool {
+		return all[i].time.Before(all[j].time)
+	})
+
+	// Determine the time span.
+	earliest := all[0].time
+	latest := all[len(all)-1].time
+
+	// Build period windows from earliest to latest.
+	period := time.Duration(periodDays) * 24 * time.Hour
+	var suggestions []suggestion
+	windowStart := earliest
+	for !windowStart.After(latest) {
+		windowEnd := windowStart.Add(period)
+		// Collect commits in this window.
+		var window []flatCommit
+		for _, c := range all {
+			if !c.time.Before(windowStart) && c.time.Before(windowEnd) {
+				window = append(window, c)
+			}
+		}
+		if len(window) > 0 {
+			suggestions = append(suggestions, buildRetroPeriod(windowStart, windowEnd.Add(-time.Second), window))
+		}
+		windowStart = windowEnd
+	}
+	return suggestions
+}
+
+// buildRetroPeriod builds a single period's suggestion.
+func buildRetroPeriod(start, end time.Time, commits []flatCommit) suggestion {
+	title := fmt.Sprintf("Trabalho de %s a %s", start.Format("02/01"), end.Format("02/01"))
+
+	// Group commits by project.
+	byProject := map[string][]flatCommit{}
+	for _, c := range commits {
+		byProject[c.project] = append(byProject[c.project], c)
+	}
+
+	// Sort projects alphabetically.
+	var projectNames []string
+	for name := range byProject {
+		projectNames = append(projectNames, name)
+	}
+	sort.Strings(projectNames)
+
+	// Build body.
+	var body strings.Builder
+	body.WriteString(fmt.Sprintf("# %s\n\n", title))
+	body.WriteString("O que foi feito neste período:\n\n")
+	for _, name := range projectNames {
+		projCommits := byProject[name]
+		body.WriteString(fmt.Sprintf("## %s\n\n", name))
+		for _, c := range projCommits {
+			body.WriteString(fmt.Sprintf("- %s\n", capitalize(c.message)))
+		}
+		body.WriteString("\n")
+	}
+	body.WriteString("## Próximos passos\n\n")
+	body.WriteString("_escreva aqui os planos e próximos passos_\n")
+
+	tags := []string{"retro", slugify(start.Format("2006-01"))}
+
+	return suggestion{
+		Title:       title,
+		Slug:        slugify(title),
+		Summary:     truncate(fmt.Sprintf("Retrospectiva de %s: %d commits em %d projetos", start.Format("02/01"), len(commits), len(projectNames)), 200),
+		Tags:        tags,
+		Placeholder: body.String(),
+	}
 }
